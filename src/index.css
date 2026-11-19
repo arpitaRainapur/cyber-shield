@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Outfit", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    color: #0f172a;
+    background-color: #f8fafc;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 3px solid #0284c7;
+    outline-offset: 2px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.senior-large-text {
+  font-size: 1.125rem;
+  line-height: 1.75;
+}
+
+.senior-large-text h1 {
+  font-size: clamp(2.35rem, 4.2vw, 3.5rem);
+}
+
+.senior-large-text h2 {
+  font-size: 2rem;
+}
+
+.senior-large-text p,
+.senior-large-text li,
+.senior-large-text label {
+  font-size: 1.15rem;
+  line-height: 1.75;
+}

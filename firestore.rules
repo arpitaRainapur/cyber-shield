@@ -1,0 +1,325 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health check document for startup SDK connection validation
+    match /test/connection {
+      allow get: if true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'role', 'preferredLanguage', 'largeText', 'speechRate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'role', 'preferredLanguage', 'largeText', 'speechRate', 'createdAt', 'updatedAt'
+        ])
+        && data.uid is string && data.uid == userId
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 100
+        && data.role in ['senior', 'caregiver']
+        && data.preferredLanguage is string && data.preferredLanguage.size() >= 2 && data.preferredLanguage.size() <= 10
+        && data.largeText is bool
+        && data.speechRate is number && data.speechRate >= 0.5 && data.speechRate <= 1.5
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'mobileNumber', 'emergencyContactNote', 'updatedAt'])
+        && data.uid is string && data.uid == userId
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 180
+        && (!('mobileNumber' in data) || (data.mobileNumber is string && data.mobileNumber.size() <= 24))
+        && (!('emergencyContactNote' in data) || (data.emergencyContactNote is string && data.emergencyContactNote.size() <= 300))
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLearningProgress(data, userId, tutorialId) {
+      return data.keys().hasAll(['userId', 'tutorialId', 'completed', 'voiceListened', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'tutorialId', 'completed', 'voiceListened', 'updatedAt'])
+        && data.userId is string && data.userId == userId
+        && data.tutorialId is string && data.tutorialId == tutorialId
+        && data.completed is bool
+        && data.voiceListened is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidQuizResult(data, userId) {
+      return data.keys().hasAll(['userId', 'tutorialId', 'tutorialTitle', 'score', 'totalQuestions', 'takenAt'])
+        && data.keys().hasOnly(['userId', 'tutorialId', 'tutorialTitle', 'score', 'totalQuestions', 'takenAt'])
+        && data.userId is string && data.userId == userId
+        && data.tutorialId is string && isValidId(data.tutorialId)
+        && data.tutorialTitle is string && data.tutorialTitle.size() >= 1 && data.tutorialTitle.size() <= 200
+        && data.score is int && data.score >= 0 && data.score <= 20
+        && data.totalQuestions is int && data.totalQuestions >= 1 && data.totalQuestions <= 20
+        && data.takenAt is timestamp;
+    }
+
+    function isValidSimulationResult(data, userId) {
+      return data.keys().hasAll(['userId', 'scenarioId', 'selectedOptionId', 'isCorrect', 'attemptedAt'])
+        && data.keys().hasOnly(['userId', 'scenarioId', 'selectedOptionId', 'isCorrect', 'attemptedAt'])
+        && data.userId is string && data.userId == userId
+        && data.scenarioId is string && isValidId(data.scenarioId)
+        && data.selectedOptionId is string && isValidId(data.selectedOptionId)
+        && data.isCorrect is bool
+        && data.attemptedAt is timestamp;
+    }
+
+    function isValidScamCheckRecord(data, userId) {
+      return data.keys().hasAll(['userId', 'inputType', 'contentExcerpt', 'riskLevel', 'riskScore', 'matchedPatterns', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'inputType', 'contentExcerpt', 'riskLevel', 'riskScore', 'matchedPatterns', 'createdAt'])
+        && data.userId is string && data.userId == userId
+        && data.inputType in ['sms', 'whatsapp', 'email', 'url', 'message']
+        && data.contentExcerpt is string && data.contentExcerpt.size() >= 1 && data.contentExcerpt.size() <= 200
+        && data.riskLevel in ['Low', 'Medium', 'High']
+        && data.riskScore is int && data.riskScore >= 0 && data.riskScore <= 100
+        && data.matchedPatterns is list && data.matchedPatterns.size() <= 20
+        && (data.matchedPatterns.size() == 0 || (data.matchedPatterns[0] is string && data.matchedPatterns[0].size() <= 200))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidConsentInvite(data) {
+      return data.keys().hasAll(['seniorUid', 'seniorName', 'caregiverEmail', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['seniorUid', 'seniorName', 'caregiverEmail', 'status', 'createdAt', 'updatedAt'])
+        && data.seniorUid is string && isValidId(data.seniorUid)
+        && data.seniorName is string && data.seniorName.size() >= 2 && data.seniorName.size() <= 100
+        && data.caregiverEmail is string && data.caregiverEmail.size() >= 5 && data.caregiverEmail.size() <= 180
+        && data.status in ['pending', 'claimed', 'revoked']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCaregiverLink(data) {
+      return data.keys().hasAll([
+          'seniorUid', 'caregiverUid', 'inviteCode', 'seniorName', 'caregiverEmail', 'status',
+          'tutorialsCompletedCount', 'totalTutorials', 'simTotalAttempts', 'simCorrectAttempts', 'simUniqueMastered', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'seniorUid', 'caregiverUid', 'inviteCode', 'seniorName', 'caregiverEmail', 'status',
+          'tutorialsCompletedCount', 'totalTutorials', 'simTotalAttempts', 'simCorrectAttempts', 'simUniqueMastered', 'updatedAt'
+        ])
+        && data.seniorUid is string && isValidId(data.seniorUid)
+        && data.caregiverUid is string && isValidId(data.caregiverUid)
+        && data.inviteCode is string && data.inviteCode.size() >= 4 && data.inviteCode.size() <= 16 && data.inviteCode.matches('^[A-Z0-9]+$')
+        && data.seniorName is string && data.seniorName.size() >= 2 && data.seniorName.size() <= 100
+        && data.caregiverEmail is string && data.caregiverEmail.size() >= 5 && data.caregiverEmail.size() <= 180
+        && data.status in ['granted', 'revoked']
+        && data.tutorialsCompletedCount is int && data.tutorialsCompletedCount >= 0 && data.tutorialsCompletedCount <= 20
+        && data.totalTutorials is int && data.totalTutorials >= 1 && data.totalTutorials <= 20
+        && data.simTotalAttempts is int && data.simTotalAttempts >= 0 && data.simTotalAttempts <= 10000
+        && data.simCorrectAttempts is int && data.simCorrectAttempts >= 0 && data.simCorrectAttempts <= 10000
+        && data.simUniqueMastered is int && data.simUniqueMastered >= 0 && data.simUniqueMastered <= 50
+        && data.updatedAt is timestamp;
+    }
+
+    // User Non-PII Educational Profile
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'role', 'preferredLanguage', 'largeText', 'speechRate', 'updatedAt'
+        ]);
+
+      // Strictly Isolated PII Document
+      match /private/{docId} {
+        allow get: if isValidId(userId) && docId == 'info' && isOwner(userId);
+        allow create: if isValidId(userId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming(), userId)
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming(), userId)
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'email', 'mobileNumber', 'emergencyContactNote', 'updatedAt'
+          ]);
+      }
+
+      // Tutorial Progress
+      match /learning_progress/{tutorialId} {
+        allow get: if isValidId(userId) && isValidId(tutorialId) && isOwner(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(tutorialId)
+          && isOwner(userId)
+          && isValidLearningProgress(incoming(), userId, tutorialId)
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && isValidId(tutorialId)
+          && isOwner(userId)
+          && isValidLearningProgress(incoming(), userId, tutorialId)
+          && incoming().userId == existing().userId
+          && incoming().tutorialId == existing().tutorialId
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'completed', 'voiceListened', 'updatedAt'
+          ]);
+      }
+
+      // Quiz Results
+      match /quiz_results/{resultId} {
+        allow get: if isValidId(userId) && isValidId(resultId) && isOwner(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(resultId)
+          && isOwner(userId)
+          && isValidQuizResult(incoming(), userId)
+          && incoming().takenAt == request.time;
+      }
+
+      // Simulation Results
+      match /simulation_results/{attemptId} {
+        allow get: if isValidId(userId) && isValidId(attemptId) && isOwner(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(attemptId)
+          && isOwner(userId)
+          && isValidSimulationResult(incoming(), userId)
+          && incoming().attemptedAt == request.time;
+      }
+
+      // Opt-In Scam Check History
+      match /scam_checks/{checkId} {
+        allow get: if isValidId(userId) && isValidId(checkId) && isOwner(userId);
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(checkId)
+          && isOwner(userId)
+          && isValidScamCheckRecord(incoming(), userId)
+          && incoming().createdAt == request.time;
+        allow delete: if isValidId(userId) && isValidId(checkId) && isOwner(userId);
+      }
+    }
+
+    // Caregiver Consent Invites
+    match /consent_invites/{inviteCode} {
+      allow get: if isValidId(inviteCode)
+        && isVerifiedUser()
+        && (
+          existing().seniorUid == request.auth.uid
+          || (request.auth.token.email is string && existing().caregiverEmail == request.auth.token.email)
+        );
+      allow list: if isVerifiedUser() && existing().seniorUid == request.auth.uid;
+      allow create: if isValidId(inviteCode)
+        && isVerifiedUser()
+        && isValidConsentInvite(incoming())
+        && incoming().seniorUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(inviteCode)
+        && isVerifiedUser()
+        && isValidConsentInvite(incoming())
+        && existing().status == 'pending'
+        && incoming().seniorUid == existing().seniorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (
+            existing().seniorUid == request.auth.uid
+            && incoming().status == 'revoked'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          || (
+            request.auth.token.email is string
+            && existing().caregiverEmail == request.auth.token.email
+            && incoming().status == 'claimed'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+    }
+
+    // Caregiver Educational Links (Zero PII, Atomically Linked to Valid Invite)
+    match /caregiver_links/{linkId} {
+      allow get: if isValidId(linkId)
+        && isVerifiedUser()
+        && (
+          existing().seniorUid == request.auth.uid
+          || (existing().caregiverUid == request.auth.uid && existing().status == 'granted')
+        );
+      allow list: if isVerifiedUser()
+        && (
+          existing().seniorUid == request.auth.uid
+          || (existing().caregiverUid == request.auth.uid && existing().status == 'granted')
+        );
+      allow create: if isValidId(linkId)
+        && isVerifiedUser()
+        && isValidCaregiverLink(incoming())
+        && incoming().status == 'granted'
+        && incoming().updatedAt == request.time
+        && incoming().caregiverUid == request.auth.uid
+        && request.auth.token.email is string
+        && incoming().caregiverEmail == request.auth.token.email
+        && exists(/databases/$(database)/documents/consent_invites/$(incoming().inviteCode))
+        && get(/databases/$(database)/documents/consent_invites/$(incoming().inviteCode)).data.seniorUid == incoming().seniorUid
+        && get(/databases/$(database)/documents/consent_invites/$(incoming().inviteCode)).data.caregiverEmail == request.auth.token.email
+        && get(/databases/$(database)/documents/consent_invites/$(incoming().inviteCode)).data.status == 'pending'
+        && getAfter(/databases/$(database)/documents/consent_invites/$(incoming().inviteCode)).data.status == 'claimed';
+      allow update: if isValidId(linkId)
+        && isVerifiedUser()
+        && isValidCaregiverLink(incoming())
+        && existing().seniorUid == request.auth.uid
+        && incoming().seniorUid == existing().seniorUid
+        && incoming().caregiverUid == existing().caregiverUid
+        && incoming().inviteCode == existing().inviteCode
+        && incoming().updatedAt == request.time
+        && (
+          (
+            incoming().status == 'revoked'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          || (
+            existing().status == 'granted'
+            && incoming().status == 'granted'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'seniorName', 'tutorialsCompletedCount', 'totalTutorials',
+              'simTotalAttempts', 'simCorrectAttempts', 'simUniqueMastered', 'updatedAt'
+            ])
+          )
+        );
+    }
+  }
+}
